@@ -7,7 +7,7 @@ from urllib.request import urlopen
 from json import loads
 from easydotdict import dotdict
 
-url = "https://jsonplaceholder.typicode.com/users/1"
+url = "https://jsonplaceholder.typicode.com/users/2"
 
 with urlopen(url) as r:
     data = loads(r.read())

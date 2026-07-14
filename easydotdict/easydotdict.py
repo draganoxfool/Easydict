@@ -52,6 +52,7 @@ class _Missing:
         for key in reversed(path):
             if key not in current:
                 current[key] = dotdict()
+                _set_parent(current[key], current, key)
             current = current[key]
         return current
 
@@ -67,6 +68,7 @@ class _ValueProxy:
             raise AttributeError(name)
         dd = dotdict()
         dd[self._value] = dotdict()
+        _set_parent(dd[self._value], dd, self._value)
         self._parent[self._key] = dd
         return _Missing(dd[self._value], name)
 
@@ -74,8 +76,11 @@ class _ValueProxy:
         if name.startswith('_'):
             object.__setattr__(self, name, value)
         else:
+            if _is_frozen(self._parent):
+                raise AttributeError("Cannot modify frozen dotdict")
             dd = dotdict()
             dd[self._value] = dotdict()
+            _set_parent(dd[self._value], dd, self._value)
             dd[self._value][name] = _wrap(value)
             self._parent[self._key] = dd
 
@@ -124,18 +129,106 @@ class _ValueProxy:
     def __getitem__(self, key):
         dd = dotdict()
         dd[self._value] = dotdict()
+        _set_parent(dd[self._value], dd, self._value)
         self._parent[self._key] = dd
         return dd[self._value][key]
 
     def __setitem__(self, key, value):
+        if _is_frozen(self._parent):
+            raise KeyError("Cannot modify frozen dotdict")
         dd = dotdict()
         dd[self._value] = dotdict()
+        _set_parent(dd[self._value], dd, self._value)
         dd[self._value][key] = _wrap(value)
         self._parent[self._key] = dd
 
     def __delitem__(self, key):
         raise KeyError(key)
 
+
+class _Cursor:
+    def __init__(self, target):
+        object.__setattr__(self, '_target', target)
+
+    def __getattr__(self, key):
+        if key.startswith('_'):
+            return object.__getattribute__(self, key)
+        return getattr(self._target, key)
+
+    def __setattr__(self, key, value):
+        if key.startswith('_'):
+            object.__setattr__(self, key, value)
+        else:
+            setattr(self._target, key, value)
+
+    def __delattr__(self, key):
+        delattr(self._target, key)
+
+    def __getitem__(self, key):
+        return self._target[key]
+
+    def __setitem__(self, key, value):
+        self._target[key] = value
+
+    def __delitem__(self, key):
+        del self._target[key]
+
+    def __repr__(self):
+        return repr(self._target)
+
+    def __str__(self):
+        return str(self._target)
+
+
+def _set_parent(child, parent, key):
+    if isinstance(child, dotdict):
+        object.__setattr__(child, '_dd_parent', parent)
+        object.__setattr__(child, '_dd_key', key)
+
+
+def _get_root(dd):
+    while True:
+        try:
+            parent = object.__getattribute__(dd, '_dd_parent')
+        except AttributeError:
+            return dd
+        dd = parent
+
+
+def _path_of(dd, key):
+    parts = []
+    cur = dd
+    while True:
+        try:
+            parent = object.__getattribute__(cur, '_dd_parent')
+            k = object.__getattribute__(cur, '_dd_key')
+        except AttributeError:
+            break
+        parts.append(k)
+        cur = parent
+    parts.reverse()
+    parts.append(str(key))
+    return '.'.join(parts)
+
+
+def _is_frozen(dd):
+    try:
+        return object.__getattribute__(_get_root(dd), '_dd_frozen')
+    except AttributeError:
+        return False
+
+
+def _notify_change(dd, key, value):
+    root = _get_root(dd)
+    try:
+        cbs = object.__getattribute__(root, '_dd_callbacks')
+    except AttributeError:
+        return
+    path = _path_of(dd, key)
+    for cb_path, callbacks in cbs.items():
+        if path == cb_path or path.startswith(cb_path + '.'):
+            for cb in callbacks:
+                cb(path, value)
 
 
 def _wrap(value):
@@ -161,7 +254,8 @@ def _convert_list(lst):
 
 
 def _deep_merge(target, source):
-    for key, value in source.items():
+    for key in dict.keys(source):
+        value = source[key] if not isinstance(source, dotdict) else dict.__getitem__(source, key)
         if key in target and isinstance(target[key], dotdict) and isinstance(value, dict):
             _deep_merge(target[key], value)
         else:
@@ -173,7 +267,9 @@ class dotdict(dict):
         super().__init__(*args, **kwargs)
         for key, value in list(super().items()):
             if isinstance(value, dict) and not isinstance(value, dotdict):
-                super().__setitem__(key, dotdict(value))
+                converted = dotdict(value)
+                _set_parent(converted, self, key)
+                super().__setitem__(key, converted)
             elif isinstance(value, list):
                 super().__setitem__(key, _convert_list(value))
 
@@ -194,9 +290,16 @@ class dotdict(dict):
         return _Missing(self, key)
 
     def __setattr__(self, key, value):
-        dict.__setitem__(self, key, _wrap(value))
+        if _is_frozen(self):
+            raise AttributeError("Cannot modify frozen dotdict")
+        value = _wrap(value)
+        _set_parent(value, self, key)
+        dict.__setitem__(self, key, value)
+        _notify_change(self, key, value)
 
     def __delattr__(self, key):
+        if _is_frozen(self):
+            raise AttributeError("Cannot modify frozen dotdict")
         try:
             dict.__delitem__(self, key)
         except KeyError:
@@ -209,7 +312,17 @@ class dotdict(dict):
             return None
 
     def __setitem__(self, key, value):
-        dict.__setitem__(self, key, _wrap(value))
+        if _is_frozen(self):
+            raise KeyError("Cannot modify frozen dotdict")
+        value = _wrap(value)
+        _set_parent(value, self, key)
+        dict.__setitem__(self, key, value)
+        _notify_change(self, key, value)
+
+    def __delitem__(self, key):
+        if _is_frozen(self):
+            raise KeyError("Cannot modify frozen dotdict")
+        super().__delitem__(key)
 
     def __repr__(self):
         return json.dumps(self.to_dict(), indent=2, default=str)
@@ -219,7 +332,8 @@ class dotdict(dict):
 
     def to_dict(self):
         result = {}
-        for key, value in self.items():
+        for key in dict.keys(self):
+            value = dict.__getitem__(self, key)
             if isinstance(value, dotdict):
                 result[key] = value.to_dict()
             elif isinstance(value, list):
@@ -239,7 +353,7 @@ class dotdict(dict):
 
     def update(self, other=None, **kwargs):
         if other is not None:
-            if hasattr(other, 'items'):
+            if isinstance(other, dict):
                 _deep_merge(self, other)
             else:
                 for k, v in other:
@@ -252,10 +366,33 @@ class dotdict(dict):
         _deep_merge(self, other)
         return self
 
-    def get(self, key, default=None):
-        if key in self:
-            return dict.__getitem__(self, key)
+    def get(self, path, default=None):
+        if '.' in path:
+            return self.dig(path) if self.has(path) else default
+        if path in self:
+            return dict.__getitem__(self, path)
         return default
+
+    def set_many(self, items):
+        if _is_frozen(self):
+            raise AttributeError("Cannot modify frozen dotdict")
+        for path, value in items.items():
+            self.put(path, value)
+        return self
+
+    def delete(self, *paths):
+        if _is_frozen(self):
+            raise AttributeError("Cannot modify frozen dotdict")
+        for path in paths:
+            keys = path.split('.')
+            current = self
+            for key in keys[:-1]:
+                current = current[key]
+                if current is None:
+                    break
+            if current is not None:
+                del current[keys[-1]]
+        return self
 
     def dig(self, path):
         keys = path.split('.')
@@ -271,13 +408,19 @@ class dotdict(dict):
         return current
 
     def put(self, path, value):
+        if _is_frozen(self):
+            raise AttributeError("Cannot modify frozen dotdict")
         keys = path.split('.')
         current = self
         for key in keys[:-1]:
             if key not in current:
                 current[key] = dotdict()
+                _set_parent(current[key], current, key)
             current = current[key]
-        current[keys[-1]] = value
+        value = _wrap(value)
+        _set_parent(value, current, keys[-1])
+        dict.__setitem__(current, keys[-1], value)
+        _notify_change(current, keys[-1], value)
 
     def has(self, path):
         keys = path.split('.')
@@ -289,9 +432,100 @@ class dotdict(dict):
                 return False
         return True
 
+    def cursor(self, path, create=False):
+        if create:
+            self.put(path, dotdict())
+        target = self.dig(path)
+        if target is None:
+            raise KeyError(f"Path '{path}' not found")
+        if not isinstance(target, (dotdict, dict)):
+            raise TypeError(f"Cannot create cursor on non-dict at '{path}'")
+        if not isinstance(target, dotdict):
+            target = dotdict(target)
+        return _Cursor(target)
+
+    def find(self, name):
+        results = []
+        def _search(obj, prefix):
+            for key in dict.keys(obj):
+                value = dict.__getitem__(obj, key)
+                full = f'{prefix}.{key}' if prefix else str(key)
+                if key == name:
+                    results.append(full)
+                if isinstance(value, dotdict):
+                    _search(value, full)
+                elif isinstance(value, list):
+                    for i, item in enumerate(value):
+                        item_full = f'{full}.{i}'
+                        if isinstance(item, dotdict):
+                            _search(item, item_full)
+        _search(self, '')
+        return results
+
+    def diff(self, other):
+        a_flat = self.flatten()
+        b_flat = other.flatten() if isinstance(other, dotdict) else dotdict(other).flatten()
+        all_keys = set(a_flat) | set(b_flat)
+        changes = {}
+        for k in all_keys:
+            av = a_flat.get(k, _MISSING)
+            bv = b_flat.get(k, _MISSING)
+            if av != bv:
+                changes[k] = {'from': None if av is _MISSING else av, 'to': None if bv is _MISSING else bv}
+        return changes
+
+    def patch(self, changes):
+        if _is_frozen(self):
+            raise AttributeError("Cannot modify frozen dotdict")
+        for path, change in changes.items():
+            if 'to' in change:
+                if change['to'] is None and self.has(path):
+                    self.delete(path)
+                elif change['to'] is not None:
+                    self.put(path, change['to'])
+        return self
+
+    def expect(self, schema):
+        for path, expected_type in schema.items():
+            value = self.dig(path)
+            if value is None:
+                raise KeyError(f"Missing required path '{path}'")
+            if isinstance(expected_type, tuple):
+                if not isinstance(value, expected_type):
+                    raise TypeError(f"Path '{path}' expected {expected_type}, got {type(value).__name__}")
+            elif not isinstance(value, expected_type):
+                raise TypeError(f"Path '{path}' expected {expected_type.__name__}, got {type(value).__name__}")
+        return self
+
+    def on_change(self, path, callback):
+        root = _get_root(self)
+        try:
+            cbs = object.__getattribute__(root, '_dd_callbacks')
+        except AttributeError:
+            object.__setattr__(root, '_dd_callbacks', {})
+            cbs = object.__getattribute__(root, '_dd_callbacks')
+        cbs.setdefault(path, []).append(callback)
+        return self
+
+    def freeze(self):
+        object.__setattr__(_get_root(self), '_dd_frozen', True)
+        return self
+
+    def unfreeze(self):
+        object.__setattr__(_get_root(self), '_dd_frozen', False)
+        return self
+
+    @property
+    def is_frozen(self):
+        try:
+            return object.__getattribute__(_get_root(self), '_dd_frozen')
+        except AttributeError:
+            return False
+
     def flatten(self, prefix=''):
         result = {}
-        for key, value in self.items():
+        for key in dict.keys(self):
+            value = dict.__getitem__(self, key)
             full_key = f'{prefix}.{key}' if prefix else str(key)
             if isinstance(value, dotdict):
                 result.update(value.flatten(prefix=full_key))
@@ -338,3 +572,6 @@ class dotdict(dict):
 
     def is_empty(self):
         return len(self) == 0
+
+
+_MISSING = object()
