@@ -64,6 +64,26 @@ d.config.database.port = 5432
 # d == {'config': {'database': {'host': 'localhost', 'port': 5432}}}
 ```
 
+### Scalar Auto-Conversion
+
+Assigning an attribute on a previously scalar value automatically converts it into a nested structure using the original value as the key:
+
+```python
+d = dotdict()
+d.name = 'Alice'
+d.name.character = 5
+# d == {'name': {'Alice': {'character': 5}}}
+```
+
+This works with any scalar type (strings, ints, floats, bools, None):
+
+```python
+d = dotdict()
+d.count = 42
+d.count.meaning = 'everything'
+# d == {'count': {'42': {'meaning': 'everything'}}}
+```
+
 ### Auto-Conversion
 
 Nested plain `dict`s and `list`s containing `dict`s are automatically wrapped:

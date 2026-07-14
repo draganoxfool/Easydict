@@ -56,7 +56,83 @@ class _Missing:
         return current
 
 
+class _ValueProxy:
+    def __init__(self, value, parent, key):
+        object.__setattr__(self, '_value', value)
+        object.__setattr__(self, '_parent', parent)
+        object.__setattr__(self, '_key', key)
+
+    def __getattr__(self, name):
+        if name.startswith('_'):
+            raise AttributeError(name)
+        dd = dotdict()
+        dd[self._value] = dotdict()
+        self._parent[self._key] = dd
+        return _Missing(dd[self._value], name)
+
+    def __setattr__(self, name, value):
+        if name.startswith('_'):
+            object.__setattr__(self, name, value)
+        else:
+            dd = dotdict()
+            dd[self._value] = dotdict()
+            dd[self._value][name] = _wrap(value)
+            self._parent[self._key] = dd
+
+    def __delattr__(self, name):
+        raise AttributeError(name)
+
+    def __bool__(self):
+        return bool(self._value)
+
+    def __eq__(self, other):
+        if other is None:
+            return False
+        return self._value == other
+
+    def __ne__(self, other):
+        if other is None:
+            return True
+        return self._value != other
+
+    def __repr__(self):
+        return repr(self._value)
+
+    def __str__(self):
+        return str(self._value)
+
+    def __hash__(self):
+        return hash(self._value)
+
+    def __len__(self):
+        return len(self._value)
+
+    def __iter__(self):
+        return iter(self._value)
+
+    def __contains__(self, item):
+        return item in self._value
+
+    def __getitem__(self, key):
+        dd = dotdict()
+        dd[self._value] = dotdict()
+        self._parent[self._key] = dd
+        return dd[self._value][key]
+
+    def __setitem__(self, key, value):
+        dd = dotdict()
+        dd[self._value] = dotdict()
+        dd[self._value][key] = _wrap(value)
+        self._parent[self._key] = dd
+
+    def __delitem__(self, key):
+        raise KeyError(key)
+
+
+
 def _wrap(value):
+    if isinstance(value, _ValueProxy):
+        value = value._value
     if isinstance(value, dict) and not isinstance(value, dotdict):
         return dotdict(value)
     elif isinstance(value, list):
@@ -93,11 +169,16 @@ class dotdict(dict):
             elif isinstance(value, list):
                 super().__setitem__(key, _convert_list(value))
 
+    _SCALAR_TYPES = (str, int, float, bool, bytes, type(None))
+
     def __getattribute__(self, key):
         if key.startswith('_'):
             return super().__getattribute__(key)
         try:
-            return dict.__getitem__(self, key)
+            value = dict.__getitem__(self, key)
+            if isinstance(value, self._SCALAR_TYPES):
+                return _ValueProxy(value, self, key)
+            return value
         except KeyError:
             return super().__getattribute__(key)
 
