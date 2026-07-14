@@ -1,25 +1,25 @@
-# easydict Documentation
+# easydotdict Documentation
 
 ## Overview
 
-`easydict` is a lightweight Python library that wraps dictionaries with dot-notation access, safe missing-key handling, automatic nested conversion, and pretty-printing. No external dependencies.
+`easydotdict` is a lightweight Python library that wraps dictionaries with dot-notation access, safe missing-key handling, automatic nested conversion, and pretty-printing. No external dependencies.
 
 ---
 
 ## Installation
 
 ```bash
-pip install easydict
+pip install easydotdict
 ```
 
-Or copy `easydict/easydict.py` into your project.
+Or copy `easydotdict/easydotdict.py` into your project.
 
 ---
 
 ## Getting Started
 
 ```python
-from easydict import EasyDict
+from easydotdict import EasyDict
 
 d = EasyDict({'user': {'profile': {'name': 'Alice'}}})
 print(d.user.profile.name)  # Alice
@@ -72,7 +72,7 @@ Nested plain `dict`s and `list`s containing `dict`s are automatically wrapped:
 data = {'users': [{'name': 'Alice'}, {'name': 'Bob'}]}
 d = EasyDict(data)
 print(d.users[0].name)  # Alice
-print(type(d.users[0])) # <class 'easydict.EasyDict'>
+print(type(d.users[0])) # <class 'easydotdict.EasyDict'>
 ```
 
 ### Pretty-Printing

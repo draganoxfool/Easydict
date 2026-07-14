@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "easydict"
+name = "easydotdict"
 version = "1.0.0"
 description = "Effortless nested dictionary access — dot notation, safe missing keys, auto-vivification, and more"
 readme = "README.md"
@@ -29,8 +29,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/draganoxfool/Easydict"
-Source = "https://github.com/draganoxfool/Easydict"
+Homepage = "https://github.com/draganoxfool/Easydotdict"
+Source = "https://github.com/draganoxfool/Easydotdict"
 
 [tool.setuptools.packages.find]
-include = ["easydict*"]
+include = ["easydotdict*"]

@@ -1,9 +1,9 @@
-# easydict
+# easydotdict
 
 Make nested dictionaries effortless — dot-notation access, safe missing-key handling, auto-vivification, deep path operations, and pretty-printing. Pure Python, no dependencies.
 
 ```python
-from easydict import EasyDict
+from easydotdict import EasyDict
 
 d = EasyDict({'user': {'profile': {'name': 'Alice'}}})
 print(d.user.profile.name)       # Alice
@@ -40,7 +40,7 @@ print(d)                                # indented JSON
 ## Install
 
 ```bash
-pip install easydict
+pip install easydotdict
 ```
 
 ## Documentation
