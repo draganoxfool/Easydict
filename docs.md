@@ -265,7 +265,7 @@ Numeric keys become list indices; alphabetical keys become dictionary keys.
 
 ### Deep Merge: `update()` and `merge()`
 
-`update(other)` performs a recursive deep merge of `other` into the current `dotdict`. Existing keys are preserved unless they are overridden by the merge:
+`update(other, **kwargs)` performs a recursive deep merge of `other` (and keyword arguments) into the current `dotdict`. Accepts any `Mapping` type (e.g. `OrderedDict`, `defaultdict`). Existing keys are preserved unless they are overridden by the merge:
 
 ```python
 d = dotdict({"user": {"name": "Alice", "age": 30}})
@@ -273,6 +273,14 @@ d.update({"user": {"email": "alice@example.com"}})
 
 print(d.user.email)  # alice@example.com
 print(d.user.name)   # Alice (preserved)
+
+# Keyword arguments and Mapping types also work
+d.update(logging={"level": "debug"})
+print(d.logging.level)  # debug
+
+from collections import OrderedDict
+d.update(OrderedDict([("user", {"role": "admin"})]))
+print(d.user.role)  # admin
 ```
 
 `merge(other)` behaves identically but returns `self`, enabling method chaining:

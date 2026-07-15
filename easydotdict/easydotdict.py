@@ -1,4 +1,5 @@
 import json
+from collections.abc import Mapping
 
 
 class _Missing:
@@ -353,14 +354,13 @@ class dotdict(dict):
 
     def update(self, other=None, **kwargs):
         if other is not None:
-            if isinstance(other, dict):
-                _deep_merge(self, other)
+            if isinstance(other, Mapping):
+                _deep_merge(self, dict(other))
             else:
                 for k, v in other:
                     self[k] = v
-        for k, v in kwargs.items():
-            _deep_merge_items = {k: v}
-            _deep_merge(self, _deep_merge_items)
+        if kwargs:
+            _deep_merge(self, kwargs)
 
     def merge(self, other):
         _deep_merge(self, other)
